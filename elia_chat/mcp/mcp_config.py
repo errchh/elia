@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 
 from elia_chat.locations import config_directory
+from elia_chat.mcp.exceptions import MCPConfigurationError, MCPErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -43,25 +44,69 @@ class MCPConfig(BaseModel):
             MCPConfig instance
             
         Raises:
-            FileNotFoundError: If the config file doesn't exist
-            ValidationError: If the config file is invalid
-            json.JSONDecodeError: If the JSON is malformed
+            MCPConfigurationError: If the config file is invalid or cannot be loaded
         """
         try:
+            if not config_path.exists():
+                raise MCPConfigurationError(
+                    message=f"MCP configuration file not found: {config_path}",
+                    error_code=MCPErrorCode.MISSING_CONFIG,
+                    details={"config_path": str(config_path)}
+                )
+            
+            if not config_path.is_file():
+                raise MCPConfigurationError(
+                    message=f"MCP configuration path is not a file: {config_path}",
+                    error_code=MCPErrorCode.INVALID_CONFIG,
+                    details={"config_path": str(config_path)}
+                )
+            
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
             
+            # Validate that it's a dictionary
+            if not isinstance(config_data, dict):
+                raise MCPConfigurationError(
+                    message=f"MCP configuration must be a JSON object, got {type(config_data).__name__}",
+                    error_code=MCPErrorCode.CONFIG_VALIDATION_ERROR,
+                    details={"config_path": str(config_path), "data_type": type(config_data).__name__}
+                )
+            
             return cls(**config_data)
             
-        except FileNotFoundError:
-            logger.error(f"MCP configuration file not found: {config_path}")
-            raise
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in MCP configuration file {config_path}: {e}")
-            raise
+            raise MCPConfigurationError(
+                message=f"Invalid JSON in MCP configuration file: {e}",
+                error_code=MCPErrorCode.CONFIG_VALIDATION_ERROR,
+                details={"config_path": str(config_path), "json_error": str(e)},
+                cause=e
+            )
         except ValidationError as e:
-            logger.error(f"Invalid MCP configuration in {config_path}: {e}")
-            raise
+            # Extract validation details
+            validation_errors = []
+            for error in e.errors():
+                validation_errors.append({
+                    "field": ".".join(str(x) for x in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"]
+                })
+            
+            raise MCPConfigurationError(
+                message=f"Invalid MCP configuration: {e}",
+                error_code=MCPErrorCode.CONFIG_VALIDATION_ERROR,
+                details={
+                    "config_path": str(config_path),
+                    "validation_errors": validation_errors
+                },
+                cause=e
+            )
+        except Exception as e:
+            raise MCPConfigurationError(
+                message=f"Failed to load MCP configuration: {e}",
+                error_code=MCPErrorCode.INVALID_CONFIG,
+                details={"config_path": str(config_path)},
+                cause=e
+            )
     
     @classmethod
     def load_default(cls) -> "MCPConfig":
@@ -79,8 +124,13 @@ class MCPConfig(BaseModel):
         
         try:
             return cls.load_from_file(config_path)
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(f"Failed to load MCP configuration from {config_path}: {e}")
+        except MCPConfigurationError as e:
+            logger.warning(f"Failed to load MCP configuration: {e.user_message}")
+            logger.debug(f"Configuration error details: {e.details}")
+            logger.warning("Using empty MCP configuration for graceful degradation")
+            return cls()
+        except Exception as e:
+            logger.error(f"Unexpected error loading MCP configuration from {config_path}: {e}")
             logger.warning("Using empty MCP configuration")
             return cls()
     

@@ -7,15 +7,18 @@ from typing import Dict, List, Optional, Any, Set, Callable
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from elia_chat.mcp.mcp_client import MCPClient, MCPConnectionStatus, MCPClientError, MCPToolError
+from elia_chat.mcp.mcp_client import MCPClient, MCPConnectionStatus
 from elia_chat.mcp.mcp_config import MCPConfig, MCPServerConfig
+from elia_chat.mcp.exceptions import (
+    MCPError, MCPConnectionError, MCPToolError, MCPServerError, 
+    MCPErrorCode, handle_mcp_error, create_graceful_degradation_error
+)
+from elia_chat.mcp.logging_config import get_mcp_logger
 
 logger = logging.getLogger(__name__)
 
 
-class MCPManagerError(Exception):
-    """Base exception for MCP manager errors."""
-    pass
+
 
 
 class ServerStatusInfo:
@@ -128,6 +131,7 @@ class MCPManager:
         self._server_status: Dict[str, ServerStatusInfo] = {}
         self._status_change_callbacks: List[Callable[[str, MCPConnectionStatus], None]] = []
         self._monitoring_task: Optional[asyncio.Task] = None
+        self._mcp_logger = get_mcp_logger()
         
     async def initialize(self) -> None:
         """Initialize all configured MCP clients."""
@@ -160,6 +164,17 @@ class MCPManager:
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
         
         logger.info(f"MCP manager initialized with {len(self.clients)} servers")
+        
+        # Log manager initialization
+        self._mcp_logger.log_security_event(
+            event="MCP manager initialized",
+            severity="INFO",
+            details={
+                "total_servers": len(self.clients),
+                "enabled_servers": list(enabled_servers.keys()),
+                "connected_servers": self.get_connected_servers()
+            }
+        )
     
     async def shutdown(self) -> None:
         """Shutdown all MCP clients and cleanup resources."""
@@ -368,23 +383,41 @@ class MCPManager:
             Tool execution result
             
         Raises:
-            MCPManagerError: If tool is not found or execution fails
+            MCPToolError: If tool is not found or execution fails
+            MCPServerError: If server is not available
         """
         # Find the server that provides this tool
         server_name = self._tool_to_server.get(tool_name)
         if not server_name:
             available_tools = list(self._tool_to_server.keys())
-            raise MCPManagerError(
-                f"Tool '{tool_name}' not found. Available tools: {available_tools}"
+            raise MCPToolError(
+                message=f"Tool '{tool_name}' not found",
+                tool_name=tool_name,
+                error_code=MCPErrorCode.TOOL_NOT_FOUND,
+                details={"available_tools": available_tools}
             )
         
         # Get the client for this server
         client = self.clients.get(server_name)
         if not client:
-            raise MCPManagerError(f"Server '{server_name}' not found")
+            raise MCPServerError(
+                message=f"Server '{server_name}' not found in manager",
+                server_name=server_name,
+                error_code=MCPErrorCode.SERVER_NOT_FOUND
+            )
         
         if not client.is_connected:
-            raise MCPManagerError(f"Server '{server_name}' is not connected")
+            # Try to reconnect if not already attempting
+            if server_name not in self._reconnect_tasks:
+                logger.info(f"Attempting to reconnect to server '{server_name}' for tool '{tool_name}'")
+                await self._start_reconnection_task(server_name, client)
+            
+            raise MCPConnectionError(
+                message=f"Server '{server_name}' is not connected",
+                server_name=server_name,
+                tool_name=tool_name,
+                error_code=MCPErrorCode.SERVER_UNAVAILABLE
+            )
         
         # Record tool execution metrics
         start_time = time.time()
@@ -395,14 +428,48 @@ class MCPManager:
             execution_time = time.time() - start_time
             if status_info:
                 status_info.record_tool_call(execution_time, success=True)
+            
+            logger.debug(f"Tool '{tool_name}' executed successfully via server '{server_name}' in {execution_time:.2f}s")
             return result
-        except MCPToolError as e:
+            
+        except MCPError as e:
             execution_time = time.time() - start_time
             if status_info:
                 status_info.record_tool_call(execution_time, success=False)
                 status_info.record_error(str(e))
-            # Re-raise as manager error with additional context
-            raise MCPManagerError(f"Tool execution failed on server '{server_name}': {e}") from e
+            
+            # Add manager context to the error
+            e.details = e.details or {}
+            e.details.update({
+                "manager_context": "tool_execution",
+                "execution_time": execution_time
+            })
+            
+            logger.error(f"Tool '{tool_name}' execution failed on server '{server_name}': {e}")
+            raise
+        except Exception as e:
+            execution_time = time.time() - start_time
+            if status_info:
+                status_info.record_tool_call(execution_time, success=False)
+                status_info.record_error(str(e))
+            
+            # Convert unexpected errors to MCP errors
+            mcp_error = handle_mcp_error(
+                error=e,
+                operation=f"Tool '{tool_name}' execution via manager",
+                server_name=server_name,
+                tool_name=tool_name,
+                default_error_code=MCPErrorCode.TOOL_EXECUTION_FAILED
+            )
+            
+            mcp_error.details = mcp_error.details or {}
+            mcp_error.details.update({
+                "manager_context": "tool_execution",
+                "execution_time": execution_time
+            })
+            
+            logger.error(f"Unexpected error during tool '{tool_name}' execution: {mcp_error}")
+            raise mcp_error
     
     async def is_tool_auto_approved(self, tool_name: str) -> bool:
         """Check if a tool is in the auto-approve list for its server.
@@ -723,6 +790,38 @@ class MCPManager:
             "tool_success_rate": overall_success_rate,
             "connected_server_names": connected_servers,
             "monitoring_active": self._monitoring_task is not None and not self._monitoring_task.done()
+        }
+    
+    def get_monitoring_data(self) -> Dict[str, Any]:
+        """Get comprehensive monitoring data for MCP operations."""
+        return {
+            "manager_summary": self.get_manager_summary(),
+            "server_metrics": self.get_all_server_metrics(),
+            "performance_summary": self._mcp_logger.get_performance_summary(),
+            "recent_audit_trail": self._mcp_logger.get_audit_trail(hours=1),
+            "health_status": asyncio.create_task(self.health_check()) if not self._shutdown_event.is_set() else None
+        }
+    
+    def cleanup_old_logs(self, days: int = 30) -> Dict[str, int]:
+        """Clean up old log entries and return cleanup statistics."""
+        cleared_audit = self._mcp_logger.clear_old_entries(days)
+        
+        # Clean up old server status entries
+        cutoff_time = datetime.now() - timedelta(days=days)
+        cleared_status = 0
+        
+        for status_info in self._server_status.values():
+            # Reset old error information
+            if (status_info.last_error_time and 
+                status_info.last_error_time < cutoff_time):
+                status_info.last_error = None
+                status_info.last_error_time = None
+                cleared_status += 1
+        
+        return {
+            "cleared_audit_entries": cleared_audit,
+            "cleared_status_entries": cleared_status,
+            "cleanup_date": datetime.now().isoformat()
         }
     
     def __repr__(self) -> str:
