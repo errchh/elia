@@ -18,6 +18,7 @@ from elia_chat.screens.help_screen import HelpScreen
 from elia_chat.screens.home_screen import HomeScreen
 from elia_chat.themes import BUILTIN_THEMES, Theme, load_user_themes
 from elia_chat.mcp.mcp_config import MCPConfig
+from elia_chat.mcp.mcp_manager import MCPManager
 
 if TYPE_CHECKING:
     from litellm.types.completion import (
@@ -64,6 +65,10 @@ class Elia(App[None]):
         """MCP configuration loaded from mcp.json. If the file doesn't exist or 
         is invalid, this will be an empty configuration with no servers."""
 
+        # Initialize MCP manager
+        self.mcp_manager = MCPManager(self.mcp_config)
+        """MCP manager for coordinating multiple MCP clients and tool execution."""
+
         super().__init__()
 
     theme: Reactive[str | None] = reactive(None, init=False)
@@ -78,6 +83,9 @@ class Elia(App[None]):
         self.runtime_config_signal.publish(self.runtime_config)
 
     async def on_mount(self) -> None:
+        # Initialize MCP manager
+        await self.mcp_manager.initialize()
+        
         await self.push_screen(HomeScreen(self.runtime_config_signal))
         self.theme = self.launch_config.theme
         if self.startup_prompt:
@@ -145,6 +153,10 @@ class Elia(App[None]):
             return self.themes[self.theme]
         except KeyError:
             return None
+
+    async def on_unmount(self) -> None:
+        """Clean up resources when the app is shutting down."""
+        await self.mcp_manager.shutdown()
 
 
 if __name__ == "__main__":

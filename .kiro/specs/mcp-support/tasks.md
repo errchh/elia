@@ -42,13 +42,13 @@
   - _Requirements: 2.1, 3.1, 3.2_
 
 - [-] 4. Implement MCP manager for multi-server coordination
-- [ ] 4.1 Create MCP manager class
+- [x] 4.1 Create MCP manager class
   - Write MCPManager class in elia_chat/mcp/mcp_manager.py
   - Implement initialization and shutdown of multiple MCP clients
   - Add tool routing logic to find appropriate server for each tool
   - _Requirements: 2.1, 2.2, 3.1, 3.4_
 
-- [ ] 4.2 Add server status tracking and monitoring
+- [x] 4.2 Add server status tracking and monitoring
   - Implement connection status monitoring for all MCP servers
   - Add automatic reconnection logic for failed connections
   - Create status reporting interface for UI integration
@@ -59,8 +59,8 @@
   - Test connection failure and recovery scenarios
   - _Requirements: 2.1, 3.1, 4.2_
 
-- [ ] 5. Integrate MCP with LiteLLM and chat system
-- [ ] 5.1 Extend chat message processing for tool calls
+- [-] 5. Integrate MCP with LiteLLM and chat system
+- [-] 5.1 Extend chat message processing for tool calls
   - Modify chat screen to handle MCP tool calls in conversation flow
   - Integrate MCP tools with LiteLLM's tool calling interface
   - Add tool call result processing and conversation continuation

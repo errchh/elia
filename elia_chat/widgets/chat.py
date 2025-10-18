@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from litellm.types.completion import (
         ChatCompletionUserMessageParam,
         ChatCompletionAssistantMessageParam,
+        ChatCompletionToolMessageParam,
     )
 
 
@@ -168,17 +169,32 @@ class Chat(Widget):
             raw_messages, model.name
         )  # type: ignore
 
+        # Get available MCP tools
+        mcp_tools = []
+        try:
+            mcp_tools = await self.elia.mcp_manager.get_available_tools()
+            log.debug(f"Found {len(mcp_tools)} MCP tools available")
+        except Exception as e:
+            log.warning(f"Failed to get MCP tools: {e}")
+
         litellm.organization = model.organization
         try:
-            response = await acompletion(
-                messages=messages,
-                stream=True,
-                model=model.name,
-                temperature=model.temperature,
-                max_retries=model.max_retries,
-                api_key=model.api_key.get_secret_value() if model.api_key else None,
-                api_base=model.api_base.unicode_string() if model.api_base else None,
-            )
+            # Include tools in the completion request if available
+            completion_kwargs = {
+                "messages": messages,
+                "stream": True,
+                "model": model.name,
+                "temperature": model.temperature,
+                "max_retries": model.max_retries,
+                "api_key": model.api_key.get_secret_value() if model.api_key else None,
+                "api_base": model.api_base.unicode_string() if model.api_base else None,
+            }
+            
+            if mcp_tools:
+                completion_kwargs["tools"] = mcp_tools
+                completion_kwargs["tool_choice"] = "auto"
+            
+            response = await acompletion(**completion_kwargs)
         except Exception as exception:
             self.app.notify(
                 f"{exception}",
@@ -210,17 +226,42 @@ class Chat(Widget):
 
         try:
             chunk_count = 0
+            tool_calls = []
+            
             async for chunk in response:
                 chunk = cast(ModelResponse, chunk)
                 response_chatbox.border_title = "Agent is responding..."
 
-                chunk_content = chunk.choices[0].delta.content
+                choice = chunk.choices[0]
+                delta = choice.delta
+                
+                # Handle content chunks
+                chunk_content = delta.content
                 if isinstance(chunk_content, str):
                     self.app.call_from_thread(
                         response_chatbox.append_chunk, chunk_content
                     )
-                else:
-                    break
+                
+                # Handle tool call chunks
+                if delta.tool_calls:
+                    for tool_call_delta in delta.tool_calls:
+                        # Ensure we have enough tool_calls in our list
+                        while len(tool_calls) <= tool_call_delta.index:
+                            tool_calls.append({
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""}
+                            })
+                        
+                        # Update the tool call at the specified index
+                        if tool_call_delta.id:
+                            tool_calls[tool_call_delta.index]["id"] = tool_call_delta.id
+                        
+                        if tool_call_delta.function:
+                            if tool_call_delta.function.name:
+                                tool_calls[tool_call_delta.index]["function"]["name"] = tool_call_delta.function.name
+                            if tool_call_delta.function.arguments:
+                                tool_calls[tool_call_delta.index]["function"]["arguments"] += tool_call_delta.function.arguments
 
                 scroll_y = self.chat_container.scroll_y
                 max_scroll_y = self.chat_container.max_scroll_y
@@ -230,7 +271,35 @@ class Chat(Widget):
                     )
 
                 chunk_count += 1
-        except Exception:
+            
+            # If we have tool calls, handle them
+            if tool_calls:
+                # Parse arguments for each tool call
+                for tool_call in tool_calls:
+                    try:
+                        import json
+                        tool_call["function"]["arguments"] = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError as e:
+                        log.error(f"Failed to parse tool call arguments: {e}")
+                        tool_call["function"]["arguments"] = {}
+                
+                # Add tool calls to the assistant message
+                response_chatbox.message.message["tool_calls"] = tool_calls
+                
+                # Handle tool calls and continue conversation
+                await self._handle_tool_calls_and_continue(tool_calls, response_chatbox)
+            else:
+                # No tool calls, complete the response normally
+                self.post_message(
+                    self.AgentResponseComplete(
+                        chat_id=self.chat_data.id,
+                        message=response_chatbox.message,
+                        chatbox=response_chatbox,
+                    )
+                )
+                
+        except Exception as e:
+            log.error(f"Error in stream_agent_response: {e}")
             self.notify(
                 "There was a problem using this model. "
                 "Please check your configuration file.",
@@ -239,14 +308,6 @@ class Chat(Widget):
                 timeout=constants.ERROR_NOTIFY_TIMEOUT_SECS,
             )
             self.post_message(self.AgentResponseFailed(self.chat_data.messages[-1]))
-        else:
-            self.post_message(
-                self.AgentResponseComplete(
-                    chat_id=self.chat_data.id,
-                    message=response_chatbox.message,
-                    chatbox=response_chatbox,
-                )
-            )
 
     @on(AgentResponseFailed)
     @on(AgentResponseStarted)
