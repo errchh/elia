@@ -23,6 +23,7 @@ from elia_chat.widgets.agent_is_typing import ResponseStatus
 from elia_chat.widgets.chat_header import ChatHeader, TitleStatic
 from elia_chat.widgets.prompt_input import PromptInput
 from elia_chat.widgets.chatbox import Chatbox
+from elia_chat.widgets.tool_approval_dialog import ToolApprovalDialog
 
 
 if TYPE_CHECKING:
@@ -389,6 +390,145 @@ class Chat(Widget):
 
     async def action_details(self) -> None:
         await self.app.push_screen(ChatDetails(self.chat_data))
+
+    async def _handle_tool_calls_and_continue(self, tool_calls: list, response_chatbox: Chatbox) -> None:
+        """Handle tool calls and continue the conversation with results."""
+        try:
+            # Process tool calls from the main thread
+            self.app.call_from_thread(self._process_tool_calls, tool_calls, response_chatbox)
+            
+        except Exception as e:
+            log.error(f"Error handling tool calls: {e}")
+            self.post_message(
+                self.AgentResponseComplete(
+                    chat_id=self.chat_data.id,
+                    message=response_chatbox.message,
+                    chatbox=response_chatbox,
+                )
+            )
+
+    @work(thread=False, group="tool_execution")
+    async def _process_tool_calls(self, tool_calls: list, response_chatbox: Chatbox) -> None:
+        """Process tool calls from the main thread."""
+        try:
+            # Check for tool approval and execute tools
+            tool_results = []
+            
+            for tool_call in tool_calls:
+                tool_name = tool_call["function"]["name"]
+                arguments = tool_call["function"]["arguments"]
+                call_id = tool_call["id"]
+                
+                # Check if tool needs approval
+                is_auto_approved = await self.elia.mcp_manager.is_tool_auto_approved(tool_name)
+                
+                if not is_auto_approved:
+                    # Show tool approval dialog
+                    approved = await self._show_tool_approval_dialog(tool_name, arguments)
+                    if not approved:
+                        # User denied tool execution
+                        tool_results.append({
+                            "tool_call_id": call_id,
+                            "role": "tool",
+                            "name": tool_name,
+                            "content": "Tool execution was denied by user."
+                        })
+                        continue
+                
+                # Show tool execution status
+                response_chatbox.append_chunk(f"\n\n[Executing tool: {tool_name}...]")
+                
+                # Execute the tool
+                try:
+                    result = await self.elia.mcp_manager.execute_tool(tool_name, arguments)
+                    tool_results.append({
+                        "tool_call_id": call_id,
+                        "role": "tool", 
+                        "name": tool_name,
+                        "content": result.get("content", "")
+                    })
+                    
+                    # Show tool execution result in UI
+                    response_chatbox.append_chunk(f"\n[Tool result: {result.get('content', '')[:100]}{'...' if len(result.get('content', '')) > 100 else ''}]")
+                    
+                except Exception as e:
+                    log.error(f"Tool execution failed for {tool_name}: {e}")
+                    tool_results.append({
+                        "tool_call_id": call_id,
+                        "role": "tool",
+                        "name": tool_name, 
+                        "content": f"Error: {str(e)}"
+                    })
+                    
+                    # Show error in UI
+                    response_chatbox.append_chunk(f"\n[Tool error: {str(e)}]")
+            
+            # Add tool result messages to conversation
+            now = datetime.datetime.now(datetime.timezone.utc)
+            for tool_result in tool_results:
+                tool_message: "ChatCompletionToolMessageParam" = {
+                    "role": "tool",
+                    "content": tool_result["content"],
+                    "tool_call_id": tool_result["tool_call_id"]
+                }
+                
+                tool_chat_message = ChatMessage(
+                    message=tool_message,
+                    timestamp=now,
+                    model=self.chat_data.model
+                )
+                self.chat_data.messages.append(tool_chat_message)
+            
+            # Complete the current assistant response
+            self.post_message(
+                self.AgentResponseComplete(
+                    chat_id=self.chat_data.id,
+                    message=response_chatbox.message,
+                    chatbox=response_chatbox,
+                )
+            )
+            
+            # Continue conversation with tool results if we have any
+            if tool_results:
+                # Start a new response to process tool results
+                self.stream_agent_response()
+            
+        except Exception as e:
+            log.error(f"Error processing tool calls: {e}")
+            response_chatbox.append_chunk(f"\n[Error processing tools: {str(e)}]")
+            self.post_message(
+                self.AgentResponseComplete(
+                    chat_id=self.chat_data.id,
+                    message=response_chatbox.message,
+                    chatbox=response_chatbox,
+                )
+            )
+
+    async def _show_tool_approval_dialog(self, tool_name: str, arguments: dict) -> bool:
+        """Show tool approval dialog to user.
+        
+        Args:
+            tool_name: Name of the tool to approve
+            arguments: Tool arguments
+            
+        Returns:
+            True if user approves, False otherwise
+        """
+        try:
+            # Get server name for the tool
+            server_name = self.elia.mcp_manager.get_tool_server(tool_name)
+            
+            # Show modal approval dialog
+            dialog = ToolApprovalDialog(tool_name, arguments, server_name)
+            result = await self.app.push_screen_wait(dialog)
+            
+            log.info(f"Tool '{tool_name}' approval result: {result}")
+            return result
+            
+        except Exception as e:
+            log.error(f"Error showing tool approval dialog: {e}")
+            # Default to deny on error
+            return False
 
     async def load_chat(self, chat_data: ChatData) -> None:
         chatboxes = [

@@ -60,13 +60,13 @@
   - _Requirements: 2.1, 3.1, 4.2_
 
 - [-] 5. Integrate MCP with LiteLLM and chat system
-- [-] 5.1 Extend chat message processing for tool calls
+- [x] 5.1 Extend chat message processing for tool calls
   - Modify chat screen to handle MCP tool calls in conversation flow
   - Integrate MCP tools with LiteLLM's tool calling interface
   - Add tool call result processing and conversation continuation
   - _Requirements: 3.1, 3.2, 5.1, 5.4_
 
-- [ ] 5.2 Implement tool approval workflow
+- [x] 5.2 Implement tool approval workflow
   - Add user confirmation dialog for non-auto-approved tools
   - Implement auto-approval checking based on server configuration
   - Handle tool approval/denial in conversation flow
