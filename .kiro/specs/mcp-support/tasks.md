@@ -108,7 +108,7 @@
   - Create audit trail for security-sensitive operations
   - _Requirements: 2.5, 3.3, 4.5_
 
-- [x] 7.3 Write error handling tests
+- [ ] 7.3 Write error handling tests
   - Test various failure scenarios and recovery mechanisms
   - Test error message display and user experience
   - _Requirements: 2.2, 3.3, 5.2_
@@ -120,7 +120,7 @@
   - Document MCP server setup and usage
   - _Requirements: 1.1, 2.1_
 
-- [ ] 8.2 Write comprehensive documentation
+- [x] 8.2 Write comprehensive documentation
   - Create user guide for configuring MCP servers
   - Document troubleshooting steps and common issues
   - Add examples of popular MCP server configurations
