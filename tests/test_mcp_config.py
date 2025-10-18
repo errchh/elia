@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 from pydantic import ValidationError
 
 from elia_chat.mcp.mcp_config import MCPConfig, MCPServerConfig
+from elia_chat.mcp.exceptions import MCPConfigurationError
 
 
 class TestMCPServerConfig:
@@ -185,7 +186,7 @@ class TestMCPConfigFileOperations:
         """Test loading from non-existent file."""
         non_existent_path = Path("/non/existent/file.json")
         
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(MCPConfigurationError):
             MCPConfig.load_from_file(non_existent_path)
     
     def test_load_from_file_invalid_json(self):
@@ -195,7 +196,7 @@ class TestMCPConfigFileOperations:
             temp_path = Path(f.name)
         
         try:
-            with pytest.raises(json.JSONDecodeError):
+            with pytest.raises(MCPConfigurationError):
                 MCPConfig.load_from_file(temp_path)
         finally:
             temp_path.unlink()
@@ -216,7 +217,7 @@ class TestMCPConfigFileOperations:
             temp_path = Path(f.name)
         
         try:
-            with pytest.raises(ValidationError):
+            with pytest.raises(MCPConfigurationError):
                 MCPConfig.load_from_file(temp_path)
         finally:
             temp_path.unlink()

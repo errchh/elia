@@ -75,11 +75,11 @@ class MCPError(Exception):
         """
         super().__init__(message)
         self.error_code = error_code
-        self.user_message = user_message or self._generate_user_message()
         self.server_name = server_name
         self.tool_name = tool_name
         self.details = details or {}
         self.cause = cause
+        self.user_message = user_message or self._generate_user_message()
     
     def _generate_user_message(self) -> str:
         """Generate a user-friendly error message based on the error code."""

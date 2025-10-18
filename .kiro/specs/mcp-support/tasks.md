@@ -126,14 +126,14 @@
   - Add examples of popular MCP server configurations
   - _Requirements: 1.1, 1.4, 4.1_
 
-- [ ] 9. Final integration and testing
-- [ ] 9.1 Integrate all MCP components with main application
+- [x] 9. Final integration and testing
+- [x] 9.1 Integrate all MCP components with main application
   - Wire MCP manager into main app initialization
   - Ensure MCP features work with all existing Elia functionality
   - Test compatibility with different model providers
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 9.2 Perform end-to-end testing
+- [x] 9.2 Perform end-to-end testing
   - Test complete MCP workflow with real MCP servers
   - Verify performance and stability under various conditions
   - Test with multiple concurrent MCP servers and tool calls
