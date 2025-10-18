@@ -77,20 +77,20 @@
   - Test tool approval workflow and auto-approval functionality
   - _Requirements: 3.1, 3.2, 5.1, 5.4_
 
-- [ ] 6. Add UI components for MCP status and management
-- [ ] 6.1 Create MCP status display widget
+- [x] 6. Add UI components for MCP status and management
+- [x] 6.1 Create MCP status display widget
   - Write widget to show MCP server connection status in UI
   - Add real-time status updates when connections change
   - Display available tools and their descriptions
   - _Requirements: 4.1, 4.2, 4.3, 4.5_
 
-- [ ] 6.2 Integrate MCP status into existing screens
+- [x] 6.2 Integrate MCP status into existing screens
   - Add MCP status to home screen or options screen
   - Show tool usage indicators in chat conversations
   - Display MCP errors and connection issues to users
   - _Requirements: 4.1, 4.3, 4.5_
 
-- [ ] 6.3 Write UI tests for MCP components
+- [x] 6.3 Write UI tests for MCP components
   - Test MCP status display and updates
   - Test tool approval dialogs and user interactions
   - _Requirements: 4.1, 4.3_
