@@ -17,6 +17,7 @@ from elia_chat.screens.chat_screen import ChatScreen
 from elia_chat.screens.help_screen import HelpScreen
 from elia_chat.screens.home_screen import HomeScreen
 from elia_chat.themes import BUILTIN_THEMES, Theme, load_user_themes
+from elia_chat.mcp.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from litellm.types.completion import (
@@ -57,6 +58,11 @@ class Elia(App[None]):
         This is a convenience which will immediately load the chat interface and
         put users into the chat window, rather than going to the home screen.
         """
+
+        # Load MCP configuration
+        self.mcp_config = MCPConfig.load_default()
+        """MCP configuration loaded from mcp.json. If the file doesn't exist or 
+        is invalid, this will be an empty configuration with no servers."""
 
         super().__init__()
 

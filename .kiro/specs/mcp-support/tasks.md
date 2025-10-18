@@ -1,24 +1,24 @@
 # Implementation Plan
 
-- [ ] 1. Set up MCP dependencies and project structure
+- [x] 1. Set up MCP dependencies and project structure
   - Add MCP-related dependencies to pyproject.toml using uv (mcp package and related libraries)
   - Run `uv sync` to install new dependencies in the managed virtual environment
   - Create elia_chat/mcp/ directory structure for MCP components
   - _Requirements: 1.1, 1.2_
 
-- [ ] 2. Implement MCP configuration system
-- [ ] 2.1 Create MCP configuration models
+- [x] 2. Implement MCP configuration system
+- [x] 2.1 Create MCP configuration models
   - Write MCPServerConfig and MCPConfig Pydantic models in elia_chat/mcp/mcp_config.py
   - Implement JSON loading and validation with proper error handling
   - Add integration with existing locations.py for config directory path
   - _Requirements: 1.1, 1.2, 1.4, 1.5_
 
-- [ ] 2.2 Add MCP configuration loading to application startup
+- [x] 2.2 Add MCP configuration loading to application startup
   - Modify app.py to load MCP configuration during initialization
   - Handle missing or invalid MCP configuration gracefully
   - _Requirements: 1.1, 1.5_
 
-- [ ] 2.3 Write unit tests for MCP configuration
+- [x] 2.3 Write unit tests for MCP configuration
   - Create tests for MCPConfig loading, validation, and error handling
   - Test configuration file discovery and fallback behavior
   - _Requirements: 1.1, 1.4_
