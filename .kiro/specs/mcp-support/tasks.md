@@ -23,20 +23,20 @@
   - Test configuration file discovery and fallback behavior
   - _Requirements: 1.1, 1.4_
 
-- [ ] 3. Implement MCP client functionality
-- [ ] 3.1 Create base MCP client class
+- [x] 3. Implement MCP client functionality
+- [x] 3.1 Create base MCP client class
   - Write MCPClient class in elia_chat/mcp/mcp_client.py with connection management
   - Implement stdio transport for command-line MCP servers
   - Add connection status tracking and error handling
   - _Requirements: 2.1, 2.2, 2.4, 2.5_
 
-- [ ] 3.2 Implement tool discovery and execution
+- [x] 3.2 Implement tool discovery and execution
   - Add methods for listing available tools from MCP servers
   - Implement tool execution with proper argument validation
   - Add timeout handling and error recovery for tool calls
   - _Requirements: 3.1, 3.2, 3.3, 3.5_
 
-- [ ] 3.3 Write unit tests for MCP client
+- [x] 3.3 Write unit tests for MCP client
   - Create tests for connection management, tool discovery, and execution
   - Mock MCP server responses for testing
   - _Requirements: 2.1, 3.1, 3.2_

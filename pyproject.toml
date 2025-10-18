@@ -40,6 +40,7 @@ dev-dependencies = [
     "textual-dev>=1.0.1",
     "pyinstrument>=4.6.2",
     "pytest>=7.0.0",
+    "pytest-asyncio>=1.2.0",
 ]
 
 
